@@ -67,14 +67,9 @@ jobs:
           # 顯示映像的 tag，用來確認最終 tag 名稱
           echo "Image Tag: $IMAGE_TAG"
 
-
-      # 03. 配置 AWS 認證
-      - name: 03. 配置 AWS 認證
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ inputs.aws-access-key-id }}
-          aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
-          aws-region: ${{ inputs.aws-region }}
+      - name: 登录阿里云 ACR
+        run: |
+    echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} registry.cn-hangzhou.aliyuncs.com --password-stdin
 
       # 04. 自動檢查並建立 ECR Repository
       - name: 04. 自動檢查並建立 ECR Repository
