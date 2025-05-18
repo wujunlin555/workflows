@@ -122,7 +122,7 @@ jobs:
         uses: docker/build-push-action@v6.9.0
         with:
           context: .
-          file: https://raw.githubusercontent.com/NaviTech-Solutions/workflows/refs/heads/main/.github/workflows/Dockerfile
+          file: https://github.com/wujunlin555/workflows/blob/main/.github/workflows/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
