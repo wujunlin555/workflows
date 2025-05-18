@@ -67,7 +67,41 @@ jobs:
 
           # 顯示映像的 tag，用來確認最終 tag 名稱
           echo "Image Tag: $IMAGE_TAG"
+      - name: 安装 aliyun CLI
+        run: |
+         curl -sL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
+         tar -xvzf aliyun-cli.tgz
+         sudo mv aliyun /usr/local/bin/
+      - name: 配置 aliyun CLI 凭证
+        run: |
+         aliyun configure set --mode AK \
+           --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
+           --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
+           --region ap-southeast-3  
+      - name: 自动检查并创建 ACR 仓库
+        run: |
+          REPO_NAME="${{ env.ACR_REPOSITORY }}"
+          NAMESPACE="${{ env.ACR_NAMESPACE }}"
+          REGION="ap-southeast-3"
 
+          # 查询仓库是否已存在
+          exists=$(aliyun cr DescribeRepositories \
+            --RegionId $REGION \
+            --RepoNamespaceName "$NAMESPACE" \
+            --RepoName "$REPO_NAME" \
+            --output json | jq -r '.Repositories | length')
+
+          if [[ "$exists" == "0" ]]; then
+            echo "仓库不存在，正在创建..."
+            aliyun cr CreateRepository \
+              --RegionId $REGION \
+              --RepoNamespaceName "$NAMESPACE" \
+              --RepoName "$REPO_NAME" \
+              --RepoType PRIVATE \
+              --Summary "Auto-created by GitHub Actions"
+          else
+              echo "仓库已存在，跳过创建。"
+          fi     
       - name: 登录阿里云 ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} ${{ inputs.acr-registry }} --password-stdin
