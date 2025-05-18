@@ -69,7 +69,7 @@ jobs:
 
       - name: 登录阿里云 ACR
         run: |
-    echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} registry.cn-hangzhou.aliyuncs.com --password-stdin
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} registry.cn-hangzhou.aliyuncs.com --password-stdin
 
       # 04. 自動檢查並建立 ECR Repository
       - name: 04. 自動檢查並建立 ECR Repository
