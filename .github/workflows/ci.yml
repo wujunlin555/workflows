@@ -107,13 +107,8 @@ jobs:
         run: |
          echo "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" | docker login \
            --username=${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-           ${{ secrets.ACR_REGISTRY }} \
+           ${{ env.ACR_REGISTRY }} \
            --password-stdin
-      # 05. 登入 Amazon ECR
-      - name: 05. 登入 Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          region: ${{ inputs.aws-region }}
 
       # 06. 設置 Docker Buildx
       - name: 06. 設置 Docker Buildx
