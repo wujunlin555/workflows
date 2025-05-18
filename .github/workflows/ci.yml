@@ -3,24 +3,26 @@ name: Build Java to Docker Image and Push to ECR
 on:
   workflow_call:
     inputs:
-      aws-region:
-        description: "AWS region"
+      acr-username:
+        description: "Alibaba Cloud ACR username"
         required: true
-        default: "ap-east-1"
-      aws-access-key-id:
-        description: "AWS Access Key ID"
+      acr-password:
+        description: "Alibaba Cloud ACR password (or Access Key Secret)"
         required: true
-      aws-secret-access-key:
-        description: "AWS Secret Access Key"
+      acr-region:
+        description: "ACR region, e.g., cn-hangzhou"
         required: true
-
+        default: "cn-hangzhou"
+      acr-registry:
+        description: "ACR registry domain, e.g., registry.cn-hangzhou.aliyuncs.com"
+        required: true
 jobs:
   build-test-and-push:
     runs-on: ubuntu-latest
 
     env:
-      AWS_REGION: ${{ inputs.aws-region }}
-      ECR_REGISTRY: 390402541453.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
+      ACR_REGION: ${{ inputs.acr-region }}
+      ACR_REGISTRY: ${{ inputs.acr-registry }}
 
     steps:
       # 01. 檢出代碼
