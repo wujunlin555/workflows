@@ -78,7 +78,7 @@ jobs:
          aliyun configure set --mode AK \
            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-           --region ap-southeast-3  
+           --region ${{ inputs.acr-region }}
       - name: 自动检查并创建 ACR 仓库
         run: |
           REPO_NAME="${{ env.ACR_REPOSITORY }}"
