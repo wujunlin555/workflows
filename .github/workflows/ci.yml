@@ -105,8 +105,10 @@ jobs:
           fi     
       - name: 登录阿里云 ACR
         run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} ${{ inputs.acr-registry }} --password-stdin
-
+         echo "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" | docker login \
+           --username=${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
+           ${{ secrets.ACR_REGISTRY }} \
+           --password-stdin
       # 05. 登入 Amazon ECR
       - name: 05. 登入 Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
