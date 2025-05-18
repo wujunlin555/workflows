@@ -1,0 +1,106 @@
+name: Build Java to Docker Image and Push to ECR
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        description: "AWS region"
+        required: true
+        default: "ap-east-1"
+      aws-access-key-id:
+        description: "AWS Access Key ID"
+        required: true
+      aws-secret-access-key:
+        description: "AWS Secret Access Key"
+        required: true
+
+jobs:
+  build-test-and-push:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ${{ inputs.aws-region }}
+      ECR_REGISTRY: 390402541453.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
+
+    steps:
+      # 01. 檢出代碼
+      - name: 01. 檢出代碼
+        uses: actions/checkout@v4.2.2
+
+      # 02. 設置變數並打印信息
+      - name: 02. 設置變數並打印信息
+        run: |
+          # 從 GitHub Actions 系統變數中取得目前執行的分支名稱，例如 "develop" 或 "feature/login"
+          BRANCH_NAME=${{ github.ref_name }}
+
+          # 將分支名稱寫入 GITHUB_ENV，讓之後的步驟也能使用這個變數
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+          # 將目前的分支名稱輸出到 console，方便除錯查看
+          echo "Current branch: $BRANCH_NAME"
+
+          # 取得當前資料夾名稱，並轉成小寫，作為 ECR repository 名稱
+          # 假設目前資料夾是 MyProject，會變成 myproject
+          REPO_NAME=$(basename "$PWD" | tr '[:upper:]' '[:lower:]')
+
+          # 將計算出的 REPO_NAME 儲存到 GITHUB_ENV，供後續步驟使用
+          echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
+
+          # 直接將分支名稱作為 TAG_PREFIX，例如 feature/login 就是 feature/login
+          TAG_PREFIX="$BRANCH_NAME"
+
+          # 將 TAG_PREFIX 儲存到 GITHUB_ENV，供後續步驟使用
+          echo "TAG_PREFIX=$TAG_PREFIX" >> $GITHUB_ENV
+
+          # 建立 IMAGE_TAG，格式為：TAG_PREFIX-YYYYMMDD-HHmm_UTC8（加上 UTC+8 時區）
+          # 例如：feature-login-20250404-1130_UTC8
+          IMAGE_TAG="${TAG_PREFIX}-$(date -u +"%Y%m%d-%H%M_UTC8" -d '+8 hours')"
+
+          # 將 IMAGE_TAG 儲存到 GITHUB_ENV，供後續步驟使用
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+          # 顯示 ECR 倉庫的完整路徑
+          echo "ECR Repository: $ECR_REGISTRY/$REPO_NAME"
+
+          # 顯示映像的 tag，用來確認最終 tag 名稱
+          echo "Image Tag: $IMAGE_TAG"
+
+
+      # 03. 配置 AWS 認證
+      - name: 03. 配置 AWS 認證
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ inputs.aws-access-key-id }}
+          aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      # 04. 自動檢查並建立 ECR Repository
+      - name: 04. 自動檢查並建立 ECR Repository
+        uses: int128/create-ecr-repository-action@v1.325.0
+        with:
+          repository: ${{ env.ECR_REPOSITORY }}
+          public: false
+
+      # 05. 登入 Amazon ECR
+      - name: 05. 登入 Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          region: ${{ inputs.aws-region }}
+
+      # 06. 設置 Docker Buildx
+      - name: 06. 設置 Docker Buildx
+        uses: docker/setup-buildx-action@v3.7.1
+        with:
+          driver: docker-container
+          driver-opts: network=host
+
+      # 07. 構建並推送 Docker 映像到 Amazon ECR
+      - name: 07. 構建並推送 Docker 映像
+        uses: docker/build-push-action@v6.9.0
+        with:
+          context: .
+          file: https://raw.githubusercontent.com/NaviTech-Solutions/workflows/refs/heads/main/.github/workflows/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
