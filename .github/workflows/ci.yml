@@ -126,4 +126,4 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
