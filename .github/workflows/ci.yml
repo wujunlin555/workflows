@@ -10,13 +10,13 @@ on:
         description: "Alibaba Cloud ACR password (or Access Key Secret)"
         required: true
       acr-region:
-        description: "ACR region, e.g., cn-hangzhou"
+        description: "ACR region, e.g."
         required: true
-        default: "cn-hangzhou"
+        default: "ap-southeast-3"
       acr-registry:
         description: "ACR registry domain, e.g., registry.ap-southeast-3.aliyuncs.com"
         required: true
-        default: "registry.ap-southeast-3.aliyuncs.com"
+        default: "registry.${{ inputs.acr-region }}.aliyuncs.com"
 jobs:
   build-test-and-push:
     runs-on: ubuntu-latest
@@ -48,7 +48,7 @@ jobs:
           REPO_NAME=$(basename "$PWD" | tr '[:upper:]' '[:lower:]')
 
           # 將計算出的 REPO_NAME 儲存到 GITHUB_ENV，供後續步驟使用
-          echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
+          echo "ACR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
 
           # 直接將分支名稱作為 TAG_PREFIX，例如 feature/login 就是 feature/login
           TAG_PREFIX="$BRANCH_NAME"
@@ -64,7 +64,7 @@ jobs:
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
           # 顯示 ECR 倉庫的完整路徑
-          echo "ECR Repository: $ECR_REGISTRY/$REPO_NAME"
+          echo "ACR Repository: $ACR_REGISTRY/$REPO_NAME"
 
           # 顯示映像的 tag，用來確認最終 tag 名稱
           echo "Image Tag: $IMAGE_TAG"
@@ -83,7 +83,7 @@ jobs:
         run: |
           REPO_NAME="${{ env.ACR_REPOSITORY }}"
           NAMESPACE="${{ env.ACR_NAMESPACE }}"
-          REGION="ap-southeast-3"
+          REGION=""
 
           # 查询仓库是否已存在
           exists=$(aliyun cr DescribeRepositories \
