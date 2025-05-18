@@ -10,11 +10,11 @@ on:
         description: "Alibaba Cloud ACR password (or Access Key Secret)"
         required: true
       acr-region:
-        description: "ACR region, e.g."
+        description: "ACR region"
         required: true
         default: "ap-southeast-3"
       acr-registry:
-        description: "ACR registry domain, e.g., registry.ap-southeast-3.aliyuncs.com"
+        description: "ACR registry domain"
         required: true
         default: "registry.${{ inputs.acr-region }}.aliyuncs.com"
 jobs:
@@ -24,7 +24,7 @@ jobs:
     env:
       ACR_REGION: ${{ inputs.acr-region }}
       ACR_REGISTRY: ${{ inputs.acr-registry }}
-      ACR_NAMESPACE: myteam
+      ACR_NAMESPACE: k8s
 
     steps:
       # 01. 檢出代碼
@@ -106,13 +106,6 @@ jobs:
       - name: 登录阿里云 ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login --username=${{ secrets.ACR_USERNAME }} ${{ inputs.acr-registry }} --password-stdin
-
-      # 04. 自動檢查並建立 ECR Repository
-      - name: 04. 自動檢查並建立 ECR Repository
-        uses: int128/create-ecr-repository-action@v1.325.0
-        with:
-          repository: ${{ env.ECR_REPOSITORY }}
-          public: false
 
       # 05. 登入 Amazon ECR
       - name: 05. 登入 Amazon ECR
