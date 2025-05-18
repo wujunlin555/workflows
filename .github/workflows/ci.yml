@@ -83,7 +83,7 @@ jobs:
         run: |
           REPO_NAME="${{ env.ACR_REPOSITORY }}"
           NAMESPACE="${{ env.ACR_NAMESPACE }}"
-          REGION=""
+          REGION="${{ env.ACR_REGION }}"
 
           # 查询仓库是否已存在
           exists=$(aliyun cr DescribeRepositories \
