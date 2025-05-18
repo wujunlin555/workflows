@@ -24,6 +24,7 @@ jobs:
     env:
       ACR_REGION: ${{ inputs.acr-region }}
       ACR_REGISTRY: ${{ inputs.acr-registry }}
+      ACR_NAMESPACE: myteam
 
     steps:
       # 01. 檢出代碼
