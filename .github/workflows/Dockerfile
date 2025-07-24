@@ -2,9 +2,16 @@ FROM eclipse-temurin:17-jdk-alpine AS builder
 
 WORKDIR /app
 
-COPY . ./
+# 复制 Maven Wrapper 和配置文件
+COPY mvnw pom.xml ./
+COPY .mvn .mvn
 
-RUN ./mvn clean package -DskipTests 
+# 给 mvnw 执行权限并下载依赖
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+
+# 复制源代码并构建
+COPY src src
+RUN ./mvnw clean package -DskipTests -B
 
 FROM eclipse-temurin:17-jre-alpine
 
