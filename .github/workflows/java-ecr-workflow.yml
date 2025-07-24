@@ -14,11 +14,6 @@ on:
         required: false
         default: "865258959313"
         type: string
-      dockerfile-path:
-        description: "Path to Dockerfile"
-        required: false
-        default: "Dockerfile"
-        type: string
     secrets:
       aws-access-key-id:
         description: "AWS Access Key ID"
@@ -88,7 +83,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ inputs.dockerfile-path }}
+          file: wujunlin555/workflows/.github/workflows/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_URI }}
