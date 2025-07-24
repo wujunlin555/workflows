@@ -13,7 +13,7 @@ on:
       aws-account-id:
         description: "AWS Account ID"
         required: false
-        default: "390402541453"
+        default: "865258959313"
         type: string
       dockerfile-path:
         description: "Path to Dockerfile"
