@@ -1,5 +1,4 @@
-# 可复用的 Java ECR 构建 Workflow
-# 放在: your-org/workflows/.github/workflows/java-ecr-workflow.yml
+# 简洁的 Java ECR 构建 Workflow
 name: Build Java to Docker Image and Push to ECR
 
 on:
@@ -15,35 +14,10 @@ on:
         required: false
         default: "865258959313"
         type: string
-      dockerfile-path:
-        description: "Path to Dockerfile"
-        required: false
-        default: "Dockerfile"
-        type: string
-      platforms:
-        description: "Target platforms"
-        required: false
-        default: "linux/amd64"
-        type: string
       java-version:
-        description: "Java version for testing"
+        description: "Java version"
         required: false
         default: "17"
-        type: string
-      enable-tests:
-        description: "Enable unit tests"
-        required: false
-        default: true
-        type: boolean
-      dockerfile-url:
-        description: "Remote Dockerfile URL"
-        required: false
-        default: ""
-        type: string
-      context-path:
-        description: "Docker build context path"
-        required: false
-        default: "."
         type: string
     secrets:
       aws-access-key-id:
@@ -55,16 +29,13 @@ on:
     outputs:
       image-uri:
         description: "Built image URI"
-        value: ${{ jobs.build-test-and-push.outputs.image-uri }}
+        value: ${{ jobs.build-push.outputs.image-uri }}
       image-tag:
         description: "Built image tag"
-        value: ${{ jobs.build-test-and-push.outputs.image-tag }}
-      ecr-repository:
-        description: "ECR repository name"
-        value: ${{ jobs.build-test-and-push.outputs.ecr-repository }}
+        value: ${{ jobs.build-push.outputs.image-tag }}
 
 jobs:
-  build-test-and-push:
+  build-push:
     runs-on: ubuntu-latest
     
     env:
@@ -72,282 +43,76 @@ jobs:
       ECR_REGISTRY: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
     
     outputs:
-      image-uri: ${{ steps.build-vars.outputs.image-uri }}
-      image-tag: ${{ steps.build-vars.outputs.image-tag }}
-      ecr-repository: ${{ steps.build-vars.outputs.ecr-repository }}
+      image-uri: ${{ steps.vars.outputs.image-uri }}
+      image-tag: ${{ steps.vars.outputs.image-tag }}
       
     steps:
-      # 01. 检出代码
-      - name: 01. 📥 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
           
-      # 02. 设置 Java 环境（仅在启用测试时）
-      - name: 02. ☕ 设置 Java ${{ inputs.java-version }}
-        if: ${{ inputs.enable-tests }}
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
           cache: maven
           
-      # 03. 运行单元测试
-      - name: 03. 🧪 运行单元测试
-        if: ${{ inputs.enable-tests }}
+      - name: Run Tests
         run: |
-          echo "🧪 Running unit tests..."
           if [ -f "pom.xml" ]; then
-            echo "📦 Detected Maven project"
             mvn clean test -B -q
-            echo "✅ Maven tests completed"
-          elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
-            echo "📦 Detected Gradle project"
-            chmod +x gradlew
-            ./gradlew test --no-daemon -q
-            echo "✅ Gradle tests completed"
-          else
-            echo "⚠️ No Maven or Gradle build file found, skipping tests"
+          elif [ -f "build.gradle" ]; then
+            chmod +x gradlew && ./gradlew test --no-daemon -q
           fi
           
-      # 04. 生成测试报告
-      - name: 04. 📊 生成测试报告
-        uses: dorny/test-reporter@v1
-        if: ${{ inputs.enable-tests && (success() || failure()) }}
-        with:
-          name: 📋 Unit Test Results
-          path: |
-            target/surefire-reports/*.xml
-            build/test-results/test/*.xml
-          reporter: java-junit
-          fail-on-error: false
-          
-      # 05. 设置构建变量
-      - name: 05. 🔧 设置构建变量
-        id: build-vars
+      - name: Set Variables
+        id: vars
         run: |
-          # 获取当前时间戳（UTC+8）
-          CURRENT_TIME=$(date -u -d '+8 hours' '+%Y%m%d-%H%M%S')
-          echo "⏰ Build time (UTC+8): $CURRENT_TIME"
-          
-          # 分支名处理：将 / 替换为 -，转为小写
-          BRANCH_NAME="${{ github.ref_name }}"
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
-          echo "🌿 Safe branch name: $SAFE_BRANCH_NAME"
-          
-          # 仓库名：从 GitHub 仓库名转小写
+          TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
+          BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
           REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          echo "📦 Repository name: $REPO_NAME"
-          
-          # 获取短 commit SHA
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "🔗 Short SHA: $SHORT_SHA"
           
-          # 主标签：分支-SHA-时间戳
-          IMAGE_TAG="${SAFE_BRANCH_NAME}-${SHORT_SHA}-${CURRENT_TIME}"
-          
-          # 时间戳标签
-          TIMESTAMP_TAG="${CURRENT_TIME}"
-          
-          # 完整镜像 URI
+          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
           IMAGE_URI="${ECR_REGISTRY}/${REPO_NAME}:${IMAGE_TAG}"
           
-          # 输出到环境变量
-          echo "BRANCH_NAME=$SAFE_BRANCH_NAME" >> $GITHUB_ENV
           echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-          echo "TIMESTAMP_TAG=$TIMESTAMP_TAG" >> $GITHUB_ENV
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           
-          # 输出到 GitHub Actions outputs
           echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
           echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "ecr-repository=$REPO_NAME" >> $GITHUB_OUTPUT
           
-          # 打印构建信息
-          echo ""
-          echo "🏗️ ====== 构建信息 ======"
-          echo "📦 ECR Repository: $REPO_NAME"
-          echo "🏷️ Main Tag: $IMAGE_TAG"
-          echo "⏰ Timestamp Tag: $TIMESTAMP_TAG"
-          echo "🐳 Full Image URI: $IMAGE_URI"
-          echo "🌐 ECR Registry: $ECR_REGISTRY"
-          echo "========================"
-          echo ""
-          
-      # 06. 配置 AWS 认证
-      - name: 06. 🔐 配置 AWS 认证
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.aws-access-key-id }}
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
           
-      # 07. 检查并创建 ECR 仓库
-      - name: 07. 🏗️ 检查并创建 ECR 仓库
+      - name: Create ECR Repository
         run: |
-          echo "🔍 检查 ECR 仓库是否存在: $ECR_REPOSITORY"
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION 2>/dev/null || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY --region $AWS_REGION
           
-          if aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION >/dev/null 2>&1; then
-            echo "✅ ECR 仓库已存在: $ECR_REPOSITORY"
-          else
-            echo "🆕 创建新的 ECR 仓库: $ECR_REPOSITORY"
-            
-            # 创建仓库
-            aws ecr create-repository \
-              --repository-name $ECR_REPOSITORY \
-              --region $AWS_REGION \
-              --image-scanning-configuration scanOnPush=true \
-              --encryption-configuration encryptionType=AES256
-            
-            echo "✅ ECR 仓库创建成功"
-            
-            # 设置生命周期策略，保留最新 20 个镜像
-            echo "🔄 设置生命周期策略..."
-            aws ecr put-lifecycle-configuration \
-              --repository-name $ECR_REPOSITORY \
-              --region $AWS_REGION \
-              --lifecycle-policy-text '{
-                "rules": [
-                  {
-                    "rulePriority": 1,
-                    "description": "Keep last 20 images",
-                    "selection": {
-                      "tagStatus": "any",
-                      "countType": "imageCountMoreThan",
-                      "countNumber": 20
-                    },
-                    "action": {
-                      "type": "expire"
-                    }
-                  }
-                ]
-              }'
-            
-            echo "✅ 生命周期策略设置完成"
-          fi
-          
-      # 08. 登录到 Amazon ECR
-      - name: 08. 🔑 登录到 Amazon ECR
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          region: ${{ inputs.aws-region }}
           
-      # 09. 设置 Docker Buildx
-      - name: 09. 🔧 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-          
-      # 10. 下载远程 Dockerfile（如果指定了 URL）
-      - name: 10. 📥 下载远程 Dockerfile
-        if: ${{ inputs.dockerfile-url != '' }}
-        run: |
-          echo "📥 下载远程 Dockerfile: ${{ inputs.dockerfile-url }}"
-          curl -fsSL "${{ inputs.dockerfile-url }}" -o Dockerfile-remote
-          echo "✅ 远程 Dockerfile 下载完成"
-          
-      # 11. 构建并推送 Docker 镜像
-      - name: 11. 🐳 构建并推送 Docker 镜像
+      - name: Build and Push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ inputs.context-path }}
-          file: ${{ inputs.dockerfile-url != '' && 'Dockerfile-remote' || inputs.dockerfile-path }}
-          platforms: ${{ inputs.platforms }}
+          context: .
           push: true
           tags: |
             ${{ env.IMAGE_URI }}
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}
           build-args: |
-            BUILDTIME=${{ env.TIMESTAMP_TAG }}
             VERSION=${{ env.IMAGE_TAG }}
             GIT_COMMIT=${{ github.sha }}
-            GIT_BRANCH=${{ github.ref_name }}
-          labels: |
-            org.opencontainers.image.title=${{ github.event.repository.name }}
-            org.opencontainers.image.description=Built from ${{ github.repository }}
-            org.opencontainers.image.url=${{ github.event.repository.html_url }}
-            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
-            org.opencontainers.image.version=${{ env.IMAGE_TAG }}
-            org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=MIT
             
-      # 12. 验证镜像推送
-      - name: 12. ✅ 验证镜像推送
+      - name: Build Summary
         run: |
-          echo "🔍 验证镜像是否成功推送到 ECR..."
-          
-          # 检查镜像是否存在
-          if aws ecr describe-images \
-              --repository-name $ECR_REPOSITORY \
-              --image-ids imageTag=$IMAGE_TAG \
-              --region $AWS_REGION >/dev/null 2>&1; then
-            echo "✅ 镜像推送验证成功!"
-            
-            # 获取镜像详细信息
-            IMAGE_INFO=$(aws ecr describe-images \
-              --repository-name $ECR_REPOSITORY \
-              --image-ids imageTag=$IMAGE_TAG \
-              --region $AWS_REGION \
-              --query 'imageDetails[0].[imageSizeInBytes,imagePushedAt]' \
-              --output text)
-            
-            IMAGE_SIZE=$(echo $IMAGE_INFO | awk '{print $1}')
-            PUSH_TIME=$(echo $IMAGE_INFO | awk '{print $2}')
-            
-            # 转换字节到 MB
-            IMAGE_SIZE_MB=$(echo "scale=2; $IMAGE_SIZE / 1024 / 1024" | bc -l)
-            
-            echo "📊 镜像大小: ${IMAGE_SIZE_MB} MB"
-            echo "⏰ 推送时间: $PUSH_TIME"
-            
-          else
-            echo "❌ 镜像推送验证失败!"
-            exit 1
-          fi
-          
-      # 13. 生成构建摘要
-      - name: 13. 📋 生成构建摘要
-        run: |
-          echo "## 🐳 Docker 镜像构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 构建信息" >> $GITHUB_STEP_SUMMARY
-          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🏷️ 镜像标签 | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⏰ 时间戳标签 | \`$TIMESTAMP_TAG\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📦 ECR 仓库 | \`$ECR_REPOSITORY\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🌐 完整 URI | \`$IMAGE_URI\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔗 Commit SHA | \`$SHORT_SHA\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🌿 分支 | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🏗️ 平台 | \`${{ inputs.platforms }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 快速链接" >> $GITHUB_STEP_SUMMARY
-          echo "- [📊 ECR 控制台](https://console.aws.amazon.com/ecr/repositories/private/${{ inputs.aws-account-id }}/$ECR_REPOSITORY)" >> $GITHUB_STEP_SUMMARY
-          echo "- [🔍 镜像详情](https://console.aws.amazon.com/ecr/repositories/private/${{ inputs.aws-account-id }}/$ECR_REPOSITORY/image/$IMAGE_TAG/details)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 使用方法" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# 拉取镜像" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull $IMAGE_URI" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# 运行容器" >> $GITHUB_STEP_SUMMARY
-          echo "docker run -p 8080:8080 $IMAGE_URI" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          
-      # 14. 输出最终结果
-      - name: 14. 🎉 构建完成
-        run: |
-          echo ""
-          echo "🎉 ==============================================="
-          echo "✅ Docker 镜像构建并推送完成!"
-          echo "📦 镜像 URI: $IMAGE_URI"
-          echo "🏷️ 主标签: $IMAGE_TAG"
-          echo "⏰ 时间戳标签: $TIMESTAMP_TAG"
-          echo "🔗 ECR 控制台: https://console.aws.amazon.com/ecr/repositories/private/${{ inputs.aws-account-id }}/$ECR_REPOSITORY"
-          echo "==============================================="
-          echo ""
+          echo "## 🐳 Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$IMAGE_URI\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`$IMAGE_TAG\`" >> $GITHUB_STEP_SUMMARY
