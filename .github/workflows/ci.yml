@@ -89,7 +89,9 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           TIMESTAMP=$(date -u +"%Y%m%d-%H%M")
           IMAGE_TAG="${SAFE_BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
+          TIMESTAMP_TAG=$(date -u +"%Y%m%d-%H%M%S")
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "TIMESTAMP_TAG=$TIMESTAMP_TAG" >> $GITHUB_ENV
           
           # 完整镜像 URI
           IMAGE_URI="${{ env.ECR_REGISTRY }}/${REPO_NAME}:${IMAGE_TAG}"
@@ -102,6 +104,7 @@ jobs:
           # 打印信息
           echo "🏗️ Repository: $REPO_NAME"
           echo "🏷️ Image Tag: $IMAGE_TAG"
+          echo "⏰ Timestamp Tag: $TIMESTAMP_TAG"
           echo "📦 Full Image URI: $IMAGE_URI"
           
       # 05. 配置 AWS 认证
@@ -167,7 +170,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_URI }}
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           
