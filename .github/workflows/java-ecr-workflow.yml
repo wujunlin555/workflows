@@ -14,10 +14,10 @@ on:
         required: false
         default: "865258959313"
         type: string
-      java-version:
-        description: "Java version"
+      dockerfile-path:
+        description: "Path to Dockerfile"
         required: false
-        default: "17"
+        default: "Dockerfile"
         type: string
     secrets:
       aws-access-key-id:
@@ -49,22 +49,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-          
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ inputs.java-version }}
-          distribution: 'temurin'
-          cache: maven
-          
-      - name: Run Tests
-        run: |
-          if [ -f "pom.xml" ]; then
-            mvn clean test -B -q
-          elif [ -f "build.gradle" ]; then
-            chmod +x gradlew && ./gradlew test --no-daemon -q
-          fi
-          
+        
       - name: Set Variables
         id: vars
         run: |
@@ -99,10 +84,11 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
           
-      - name: Build and Push
+      - name: Build and Push with Dockerfile
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ inputs.dockerfile-path }}
           push: true
           tags: |
             ${{ env.IMAGE_URI }}
@@ -110,9 +96,12 @@ jobs:
           build-args: |
             VERSION=${{ env.IMAGE_TAG }}
             GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILDTIME=${{ env.TIMESTAMP }}
             
       - name: Build Summary
         run: |
           echo "## 🐳 Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`$IMAGE_URI\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** \`$IMAGE_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Dockerfile:** \`${{ inputs.dockerfile-path }}\`" >> $GITHUB_STEP_SUMMARY
