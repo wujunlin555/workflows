@@ -1,129 +1,179 @@
 name: Build Java to Docker Image and Push to ECR
-
 on:
   workflow_call:
     inputs:
-      acr-username:
-        description: "Alibaba Cloud ACR username"
+      aws-region:
+        description: "AWS region"
+        required: false
+        default: "ap-east-1"
+        type: string
+      dockerfile-path:
+        description: "Path to Dockerfile"
+        required: false
+        default: "Dockerfile"
+        type: string
+      platforms:
+        description: "Target platforms"
+        required: false
+        default: "linux/amd64"
+        type: string
+      java-version:
+        description: "Java version for testing"
+        required: false
+        default: "17"
+        type: string
+      enable-tests:
+        description: "Enable unit tests"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      aws-access-key-id:
+        description: "AWS Access Key ID"
         required: true
-      acr-password:
-        description: "Alibaba Cloud ACR password (or Access Key Secret)"
+      aws-secret-access-key:
+        description: "AWS Secret Access Key"
         required: true
-      acr-region:
-        description: "ACR region"
-        required: true
-        default: "ap-southeast-3"
-      acr-registry:
-        description: "ACR registry domain"
-        required: true
-        default: "registry.${{ inputs.acr-region }}.aliyuncs.com"
+      
 jobs:
   build-test-and-push:
     runs-on: ubuntu-latest
-
     env:
-      ACR_REGION: ${{ inputs.acr-region }}
-      ACR_REGISTRY: ${{ inputs.acr-registry }}
-      ACR_NAMESPACE: k8s
-
+      AWS_REGION: ${{ inputs.aws-region }}
+      ECR_REGISTRY: 390402541453.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
+    
+    outputs:
+      image-uri: ${{ steps.build-vars.outputs.image-uri }}
+      image-tag: ${{ steps.build-vars.outputs.image-tag }}
+      
     steps:
-      # 01. 檢出代碼
-      - name: 01. 檢出代碼
-        uses: actions/checkout@v4.2.2
-
-      # 02. 設置變數並打印信息
-      - name: 02. 設置變數並打印信息
-        run: |
-          # 從 GitHub Actions 系統變數中取得目前執行的分支名稱，例如 "develop" 或 "feature/login"
-          BRANCH_NAME=${{ github.ref_name }}
-
-          # 將分支名稱寫入 GITHUB_ENV，讓之後的步驟也能使用這個變數
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-
-          # 將目前的分支名稱輸出到 console，方便除錯查看
-          echo "Current branch: $BRANCH_NAME"
-
-          # 取得當前資料夾名稱，並轉成小寫，作為 ECR repository 名稱
-          # 假設目前資料夾是 MyProject，會變成 myproject
-          REPO_NAME=$(basename "$PWD" | tr '[:upper:]' '[:lower:]')
-
-          # 將計算出的 REPO_NAME 儲存到 GITHUB_ENV，供後續步驟使用
-          echo "ACR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
-
-          # 直接將分支名稱作為 TAG_PREFIX，例如 feature/login 就是 feature/login
-          TAG_PREFIX="$BRANCH_NAME"
-
-          # 將 TAG_PREFIX 儲存到 GITHUB_ENV，供後續步驟使用
-          echo "TAG_PREFIX=$TAG_PREFIX" >> $GITHUB_ENV
-
-          # 建立 IMAGE_TAG，格式為：TAG_PREFIX-YYYYMMDD-HHmm_UTC8（加上 UTC+8 時區）
-          # 例如：feature-login-20250404-1130_UTC8
-          IMAGE_TAG="${TAG_PREFIX}-$(date -u +"%Y%m%d-%H%M_UTC8" -d '+8 hours')"
-
-          # 將 IMAGE_TAG 儲存到 GITHUB_ENV，供後續步驟使用
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-          # 顯示 ECR 倉庫的完整路徑
-          echo "ACR Repository: $ACR_REGISTRY/$REPO_NAME"
-
-          # 顯示映像的 tag，用來確認最終 tag 名稱
-          echo "Image Tag: $IMAGE_TAG"
-      - name: 安装 aliyun CLI
-        run: |
-         curl -sL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
-         tar -xvzf aliyun-cli.tgz
-         sudo mv aliyun /usr/local/bin/
-      - name: 配置 aliyun CLI 凭证
-        run: |
-         aliyun configure set --mode AK \
-           --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-           --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-           --region ${{ inputs.acr-region }}
-      - name: 自动检查并创建 ACR 仓库
-        run: |
-          REPO_NAME="${{ env.ACR_REPOSITORY }}"
-          NAMESPACE="${{ env.ACR_NAMESPACE }}"
-          REGION="${{ env.ACR_REGION }}"
-
-          # 查询仓库是否已存在
-          exists=$(aliyun cr DescribeRepositories \
-            --RegionId $REGION \
-            --RepoNamespaceName "$NAMESPACE" \
-            --RepoName "$REPO_NAME" \
-            --output json | jq -r '.Repositories | length')
-
-          if [[ "$exists" == "0" ]]; then
-            echo "仓库不存在，正在创建..."
-            aliyun cr CreateRepository \
-              --RegionId $REGION \
-              --RepoNamespaceName "$NAMESPACE" \
-              --RepoName "$REPO_NAME" \
-              --RepoType PRIVATE \
-              --Summary "Auto-created by GitHub Actions"
-          else
-              echo "仓库已存在，跳过创建。"
-          fi     
-      - name: 登录阿里云 ACR
-        run: |
-         echo "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" | docker login \
-           --username=${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-           ${{ env.ACR_REGISTRY }} \
-           --password-stdin
-
-      # 06. 設置 Docker Buildx
-      - name: 06. 設置 Docker Buildx
-        uses: docker/setup-buildx-action@v3.7.1
+      # 01. 检出代码
+      - name: 01. 检出代码
+        uses: actions/checkout@v4
+        
+      # 02. 设置 Java 环境（用于测试）
+      - name: 02. 设置 Java ${{ inputs.java-version }}
+        if: ${{ inputs.enable-tests }}
+        uses: actions/setup-java@v4
         with:
-          driver: docker-container
-          driver-opts: network=host
-
-      # 07. 構建並推送 Docker 映像到 Amazon ECR
-      - name: 07. 構建並推送 Docker 映像
-        uses: docker/build-push-action@v6.9.0
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+          
+      # 03. 运行单元测试
+      - name: 03. 运行单元测试
+        if: ${{ inputs.enable-tests }}
+        run: |
+          if [ -f "pom.xml" ]; then
+            mvn clean test
+          elif [ -f "build.gradle" ]; then
+            ./gradlew test
+          else
+            echo "No Maven or Gradle build file found, skipping tests"
+          fi
+          
+      # 04. 设置变量并打印信息
+      - name: 04. 设置构建变量
+        id: build-vars
+        run: |
+          # 分支名处理：将 / 替换为 -，避免 Docker tag 问题
+          BRANCH_NAME="${{ github.ref_name }}"
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
+          echo "BRANCH_NAME=$SAFE_BRANCH_NAME" >> $GITHUB_ENV
+          
+          # 仓库名：项目名称转小写
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
+          
+          # 镜像标签：分支-提交SHA前7位-时间戳
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M")
+          IMAGE_TAG="${SAFE_BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          
+          # 完整镜像 URI
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/${REPO_NAME}:${IMAGE_TAG}"
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          
+          # 输出到 GitHub Actions outputs
+          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          
+          # 打印信息
+          echo "🏗️ Repository: $REPO_NAME"
+          echo "🏷️ Image Tag: $IMAGE_TAG"
+          echo "📦 Full Image URI: $IMAGE_URI"
+          
+      # 05. 配置 AWS 认证
+      - name: 05. 配置 AWS 认证
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+          
+      # 06. 创建 ECR 仓库（如果不存在）
+      - name: 06. 创建 ECR 仓库
+        run: |
+          echo "🔍 检查 ECR 仓库是否存在..."
+          if aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ inputs.aws-region }} 2>/dev/null; then
+            echo "✅ ECR 仓库已存在: ${{ env.ECR_REPOSITORY }}"
+          else
+            echo "🆕 创建 ECR 仓库: ${{ env.ECR_REPOSITORY }}"
+            aws ecr create-repository \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --region ${{ inputs.aws-region }} \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256
+            
+            # 设置生命周期策略
+            aws ecr put-lifecycle-configuration \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --region ${{ inputs.aws-region }} \
+              --lifecycle-policy-text '{
+                "rules": [
+                  {
+                    "rulePriority": 1,
+                    "description": "Keep last 20 images",
+                    "selection": {
+                      "tagStatus": "any",
+                      "countType": "imageCountMoreThan",
+                      "countNumber": 20
+                    },
+                    "action": {
+                      "type": "expire"
+                    }
+                  }
+                ]
+              }'
+            echo "✅ ECR 仓库创建完成并设置生命周期策略"
+          fi
+          
+      # 07. 登录 Amazon ECR
+      - name: 07. 登录 Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      # 08. 设置 Docker Buildx
+      - name: 08. 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      # 09. 构建并推送 Docker 镜像
+      - name: 09. 构建并推送 Docker 镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: https://github.com/wujunlin555/workflows/blob/main/.github/workflows/Dockerfile
-          platforms: linux/amd64
+          file: ${{ inputs.dockerfile-path }}
+          platforms: ${{ inputs.platforms }}
           push: true
           tags: |
-            ${{ env.ACR_REGISTRY }}/${{ env.ACR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_URI }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      # 10. 输出构建结果
+      - name: 10. 构建完成
+        run: |
+          echo "🎉 构建完成！"
+          echo "📦 镜像已推送到: ${{ env.IMAGE_URI }}"
+          echo "🔗 ECR 控制台: https://console.aws.amazon.com/ecr/repositories/private/${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}"
