@@ -83,7 +83,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: wujunlin555/workflows/.github/workflows/Dockerfile
+          file: https://github.com/wujunlin555/workflows/blob/main/.github/workflows/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_URI }}
