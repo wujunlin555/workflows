@@ -1,201 +1,101 @@
-# 简洁的 Java ECR 构建 Workflow
-name: Build Java to Docker Image and Push to ECR
+name: Build Java Docker Image and Push to ECR
 
 on:
   workflow_call:
     inputs:
       aws-region:
-        description: "AWS region"
-        required: false
         default: "ap-east-1"
         type: string
       aws-account-id:
-        description: "AWS Account ID"
-        required: false
         default: "865258959313"
         type: string
       keep-images:
-        description: "Number of images to keep"
-        required: false
         default: 20
         type: number
     secrets:
       aws-access-key-id:
-        description: "AWS Access Key ID"
         required: true
       aws-secret-access-key:
-        description: "AWS Secret Access Key"
         required: true
     outputs:
       image-uri:
-        description: "Built image URI"
         value: ${{ jobs.build-push.outputs.image-uri }}
       image-tag:
-        description: "Built image tag"
         value: ${{ jobs.build-push.outputs.image-tag }}
 
 jobs:
   build-push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    
+
     env:
       AWS_REGION: ${{ inputs.aws-region }}
       ECR_REGISTRY: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
-    
+
     outputs:
       image-uri: ${{ steps.vars.outputs.image-uri }}
       image-tag: ${{ steps.vars.outputs.image-tag }}
-      
+
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
-        
-      - name: 🔧 Set Variables
+
+      - name: Set Variables
         id: vars
         run: |
-          TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
-          BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
-          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          
-          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
-          IMAGE_URI="${ECR_REGISTRY}/${REPO_NAME}:${IMAGE_TAG}"
-          
-          echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
-          
-          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
-          echo "🏷️ Image Tag: $IMAGE_TAG"
-          echo "📦 Repository: $REPO_NAME"
-          
-      - name: 🔐 Configure AWS
+          TIME=$(date -u '+%Y%m%d-%H%M%S')
+          BRANCH=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | tr '/' '-')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="${BRANCH}-${SHA}-${TIME}"
+          URI="${ECR_REGISTRY}/${REPO}:${TAG}"
+
+          echo "ECR_REPO=$REPO" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+          echo "IMAGE_URI=$URI" >> $GITHUB_ENV
+
+          echo "image-uri=$URI" >> $GITHUB_OUTPUT
+          echo "image-tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.aws-access-key-id }}
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
-          
-      - name: 🏗️ Create ECR Repository
+
+      - name: Create ECR Repository (if not exists)
         run: |
-          echo "🔍 Checking ECR repository: $ECR_REPOSITORY"
-          
-          if aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION >/dev/null 2>&1; then
-            echo "✅ Repository exists"
-          else
-            echo "🆕 Creating repository with lifecycle policy"
-            
-            # 创建仓库
-            aws ecr create-repository \
-              --repository-name $ECR_REPOSITORY \
-              --region $AWS_REGION \
-              --image-scanning-configuration scanOnPush=true
-            
-            # 设置生命周期策略
-            aws ecr put-lifecycle-configuration \
-              --repository-name $ECR_REPOSITORY \
-              --region $AWS_REGION \
-              --lifecycle-policy-text '{
-                "rules": [
-                  {
-                    "rulePriority": 1,
-                    "description": "Keep last ${{ inputs.keep-images }} images",
-                    "selection": {
-                      "tagStatus": "any",
-                      "countType": "imageCountMoreThan",
-                      "countNumber": ${{ inputs.keep-images }}
-                    },
-                    "action": {
-                      "type": "expire"
-                    }
-                  }
-                ]
-              }'
-            
-            echo "✅ Repository created with lifecycle policy"
-          fi
-          
-      - name: 🔑 Login to ECR
+          aws ecr describe-repositories --repository-names $ECR_REPO || \
+          aws ecr create-repository --repository-name $ECR_REPO --image-scanning-configuration scanOnPush=true
+          aws ecr put-lifecycle-configuration --repository-name $ECR_REPO --lifecycle-policy-text "{
+            \"rules\": [{
+              \"rulePriority\": 1,
+              \"description\": \"Keep last ${{ inputs.keep-images }} images\",
+              \"selection\": {\"tagStatus\": \"any\", \"countType\": \"imageCountMoreThan\", \"countNumber\": ${{ inputs.keep-images }}},
+              \"action\": {\"type\": \"expire\"}
+            }]
+          }"
+
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
-          
-      - name: 🐳 Build and Push
+
+      - name: Build and Push Docker Image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: https://raw.githubusercontent.com/wujunlin555/workflows/main/.github/workflows/Dockerfile
+          file: Dockerfile
           push: true
-          platforms: linux/amd64
           tags: |
             ${{ env.IMAGE_URI }}
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}
-          build-args: |
-            VERSION=${{ env.IMAGE_TAG }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILDTIME=${{ env.TIMESTAMP }}
-            
-      - name: 🧹 Cleanup Old Images
+
+      - name: Cleanup Old Images
         run: |
-          echo "🗑️ Cleaning up old images (keeping latest ${{ inputs.keep-images }})"
-          
-          # 获取所有镜像，按推送时间排序（最新的在前）
-          IMAGES=$(aws ecr describe-images \
-            --repository-name $ECR_REPOSITORY \
-            --region $AWS_REGION \
-            --query 'sort_by(imageDetails,&imagePushedAt)[:-${{ inputs.keep-images }}].[imageDigest]' \
-            --output text)
-          
-          if [ -n "$IMAGES" ] && [ "$IMAGES" != "None" ]; then
-            echo "🗑️ Found old images to delete"
-            
-            # 删除旧镜像
-            for digest in $IMAGES; do
-              if [ "$digest" != "None" ] && [ -n "$digest" ]; then
-                echo "Deleting image: $digest"
-                aws ecr batch-delete-image \
-                  --repository-name $ECR_REPOSITORY \
-                  --region $AWS_REGION \
-                  --image-ids imageDigest=$digest >/dev/null 2>&1 || true
-              fi
-            done
-            
-            echo "✅ Cleanup completed"
-          else
-            echo "ℹ️ No old images to delete"
-          fi
-          
-      - name: 📊 Repository Status
+          DIGESTS=$(aws ecr describe-images --repository-name $ECR_REPO --query 'sort_by(imageDetails,&imagePushedAt)[:-${{ inputs.keep-images }}].[imageDigest]' --output text)
+          for d in $DIGESTS; do
+            aws ecr batch-delete-image --repository-name $ECR_REPO --image-ids imageDigest=$d || true
+          done
+
+      - name: Output Image Info
         run: |
-          # 获取镜像数量和总大小
-          REPO_INFO=$(aws ecr describe-images \
-            --repository-name $ECR_REPOSITORY \
-            --region $AWS_REGION \
-            --query '[length(imageDetails), sum(imageDetails[].imageSizeInBytes)]' \
-            --output text)
-          
-          IMAGE_COUNT=$(echo $REPO_INFO | awk '{print $1}')
-          TOTAL_SIZE_BYTES=$(echo $REPO_INFO | awk '{print $2}')
-          TOTAL_SIZE_MB=$(echo "scale=1; $TOTAL_SIZE_BYTES / 1024 / 1024" | bc -l 2>/dev/null || echo "N/A")
-          
-          echo "📊 Repository Status:"
-          echo "   Images Count: $IMAGE_COUNT"
-          echo "   Total Size: ${TOTAL_SIZE_MB} MB"
-          echo "   Repository: $ECR_REPOSITORY"
-          
-      - name: 📋 Build Summary
-        run: |
-          echo "## 🐳 Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🏷️ Image Tag | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📦 Image URI | \`$IMAGE_URI\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🗂️ Repository | \`$ECR_REPOSITORY\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔗 Commit | \`$(echo ${{ github.sha }} | cut -c1-7)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📊 Keep Images | \`${{ inputs.keep-images }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [📊 ECR Console](https://console.aws.amazon.com/ecr/repositories/private/${{ inputs.aws-account-id }}/$ECR_REPOSITORY)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Image pushed: ${{ env.IMAGE_URI }}"
