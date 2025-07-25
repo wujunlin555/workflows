@@ -51,9 +51,8 @@ jobs:
           TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
           BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
           REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           
-          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
+          IMAGE_TAG="${BRANCH_NAME}-${TIMESTAMP}"
           IMAGE_URI="${ECR_REGISTRY}/${REPO_NAME}:${IMAGE_TAG}"
           
           echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
