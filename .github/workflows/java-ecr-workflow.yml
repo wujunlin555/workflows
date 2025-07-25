@@ -150,10 +150,6 @@ jobs:
           tags: |
             ${{ env.IMAGE_URI }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}
-          build-args: |
-            VERSION=${{ env.IMAGE_TAG }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILDTIME=${{ env.TIMESTAMP }}
             
 
       - name: Repository Status
