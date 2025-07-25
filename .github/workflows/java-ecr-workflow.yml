@@ -78,40 +78,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
           
-      - name: Create ECR Repository
+      - name: Create ECR Repository with Lifecycle Policy
         uses: int128/create-ecr-repository-action@v1
         with:
           repository: ${{ env.ECR_REPOSITORY }}
           public: false
-          
-      - name: Set Lifecycle Policy
-        run: |
-          cat > lifecycle-policy.json << EOF
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Keep last ${{ inputs.keep-images }} images",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": ${{ inputs.keep-images }}
-                },
-                "action": {
-                  "type": "expire"
+          lifecycle-policy: |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep last ${{ inputs.keep-images }} images",
+                  "selection": {
+                    "tagStatus": "any",
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${{ inputs.keep-images }}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
                 }
-              }
-            ]
-          }
-          EOF
-          
-          aws ecr put-lifecycle-policy \
-            --repository-name "$ECR_REPOSITORY" \
-            --region "$AWS_REGION" \
-            --lifecycle-policy-text file://lifecycle-policy.json
-          
-          rm -f lifecycle-policy.json
-          echo "Lifecycle policy set (keep ${{ inputs.keep-images }} images)"
+              ]
+            }
           
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
