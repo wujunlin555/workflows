@@ -65,13 +65,11 @@ jobs:
           echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           
           echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
           echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           
-          echo "Image Tag: $IMAGE_TAG"
-          echo "Repository: $REPO_NAME"
+          echo "Image: $IMAGE_URI"
           
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -80,40 +78,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
           
-      - name: Create ECR Repository
+      - name: Setup ECR Repository
         run: |
-          echo "Checking ECR repository: $ECR_REPOSITORY"
-          
-          # 检查仓库是否存在
-          if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "Repository exists: $ECR_REPOSITORY"
-          else
+          # 检查并创建仓库
+          if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
             echo "Creating repository: $ECR_REPOSITORY"
-            
             aws ecr create-repository \
               --repository-name "$ECR_REPOSITORY" \
               --region "$AWS_REGION" \
               --image-scanning-configuration scanOnPush=true \
               --encryption-configuration encryptionType=AES256
-            
-            echo "Repository created successfully"
           fi
           
-      - name: Set Lifecycle Policy
-        run: |
-          echo "Setting lifecycle policy for repository: $ECR_REPOSITORY"
-          
-          # 创建生命周期策略文件
-          cat > lifecycle-policy.json << 'EOF'
+          # 设置生命周期策略
+          cat > lifecycle-policy.json << EOF
           {
             "rules": [
               {
                 "rulePriority": 1,
-                "description": "Keep last images based on count",
+                "description": "Keep last ${{ inputs.keep-images }} images",
                 "selection": {
                   "tagStatus": "any",
                   "countType": "imageCountMoreThan",
-                  "countNumber": KEEP_IMAGES_PLACEHOLDER
+                  "countNumber": ${{ inputs.keep-images }}
                 },
                 "action": {
                   "type": "expire"
@@ -123,19 +110,13 @@ jobs:
           }
           EOF
           
-          # 替换占位符
-          sed -i "s/KEEP_IMAGES_PLACEHOLDER/${{ inputs.keep-images }}/g" lifecycle-policy.json
-          
-          # 设置生命周期策略
           aws ecr put-lifecycle-policy \
             --repository-name "$ECR_REPOSITORY" \
             --region "$AWS_REGION" \
             --lifecycle-policy-text file://lifecycle-policy.json
           
-          echo "Lifecycle policy set successfully (keep latest ${{ inputs.keep-images }} images)"
-          
-          # 清理临时文件
           rm -f lifecycle-policy.json
+          echo "Repository ready with lifecycle policy (keep ${{ inputs.keep-images }} images)"
           
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -147,36 +128,8 @@ jobs:
           file: https://raw.githubusercontent.com/wujunlin555/workflows/main/.github/workflows/Dockerfile
           push: true
           platforms: linux/amd64
-          tags: |
-            ${{ env.IMAGE_URI }}
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}
+          tags: ${{ env.IMAGE_URI }}
         
-      - name: Output Image Info
+      - name: Build Complete
         run: |
-          echo "Build completed successfully!"
-          echo "Image URI: ${{ env.IMAGE_URI }}"
-
-      - name: Repository Status
-        run: |
-          # 获取仓库统计信息
-          REPO_STATS=$(aws ecr describe-images \
-            --repository-name "$ECR_REPOSITORY" \
-            --region "$AWS_REGION" \
-            --query '[length(imageDetails), sum(imageDetails[].imageSizeInBytes)]' \
-            --output text 2>/dev/null || echo "0 0")
-          
-          IMAGE_COUNT=$(echo "$REPO_STATS" | awk '{print $1}')
-          TOTAL_SIZE_BYTES=$(echo "$REPO_STATS" | awk '{print $2}')
-          
-          # 计算大小（MB）
-          if [ "$TOTAL_SIZE_BYTES" != "0" ] && [ "$TOTAL_SIZE_BYTES" != "null" ] && [ -n "$TOTAL_SIZE_BYTES" ]; then
-            TOTAL_SIZE_MB=$(awk "BEGIN {printf \"%.1f\", $TOTAL_SIZE_BYTES/1024/1024}")
-          else
-            TOTAL_SIZE_MB="0.0"
-          fi
-          
-          echo "Repository Status:"
-          echo "  Repository: $ECR_REPOSITORY"
-          echo "  Images Count: $IMAGE_COUNT"
-          echo "  Total Size: ${TOTAL_SIZE_MB} MB"
-          echo "  Keep Policy: Latest ${{ inputs.keep-images }} images"
+          echo "✅ Image pushed: ${{ env.IMAGE_URI }}"
