@@ -150,6 +150,13 @@ jobs:
           tags: |
             ${{ env.IMAGE_URI }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}
+        
+      - name: Output Image Info
+        run: |
+          echo "Build completed successfully!"
+          echo "Image URI: ${{ env.IMAGE_URI }}"
+          echo "Alternative tag: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.TIMESTAMP }}"
+          echo "ECR Console: https://console.aws.amazon.com/ecr/repositories/private/${{ inputs.aws-account-id }}/${{ env.ECR_REPOSITORY }}"
             
 
       - name: Repository Status
