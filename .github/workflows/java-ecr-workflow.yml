@@ -78,19 +78,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
           
-      - name: Setup ECR Repository
-        run: |
-          # 检查并创建仓库
-          if ! aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "Creating repository: $ECR_REPOSITORY"
-            aws ecr create-repository \
-              --repository-name "$ECR_REPOSITORY" \
-              --region "$AWS_REGION" \
-              --image-scanning-configuration scanOnPush=true \
-              --encryption-configuration encryptionType=AES256
-          fi
+      - name: Create ECR Repository
+        uses: int128/create-ecr-repository-action@v1
+        with:
+          repository: ${{ env.ECR_REPOSITORY }}
+          public: false
           
-          # 设置生命周期策略
+      - name: Set Lifecycle Policy
+        run: |
           cat > lifecycle-policy.json << EOF
           {
             "rules": [
@@ -116,7 +111,7 @@ jobs:
             --lifecycle-policy-text file://lifecycle-policy.json
           
           rm -f lifecycle-policy.json
-          echo "Repository ready with lifecycle policy (keep ${{ inputs.keep-images }} images)"
+          echo "Lifecycle policy set (keep ${{ inputs.keep-images }} images)"
           
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
