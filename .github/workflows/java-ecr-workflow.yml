@@ -84,6 +84,7 @@ jobs:
         run: |
           echo "Checking ECR repository: $ECR_REPOSITORY"
           
+          # 检查仓库是否存在
           if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null 2>&1; then
             echo "Repository exists: $ECR_REPOSITORY"
           else
@@ -95,30 +96,52 @@ jobs:
               --image-scanning-configuration scanOnPush=true \
               --encryption-configuration encryptionType=AES256
             
-            echo "Setting lifecycle policy"
-            
-            aws ecr put-lifecycle-configuration \
-              --repository-name "$ECR_REPOSITORY" \
-              --region "$AWS_REGION" \
-              --lifecycle-policy-text '{
-                "rules": [
-                  {
-                    "rulePriority": 1,
-                    "description": "Keep last '${{ inputs.keep-images }}' images",
-                    "selection": {
-                      "tagStatus": "any",
-                      "countType": "imageCountMoreThan",
-                      "countNumber": '${{ inputs.keep-images }}'
-                    },
-                    "action": {
-                      "type": "expire"
-                    }
-                  }
-                ]
-              }'
-            
             echo "Repository created successfully"
           fi
+          
+      - name: Set Lifecycle Policy
+        run: |
+          echo "Setting lifecycle policy for repository: $ECR_REPOSITORY"
+          
+          # 创建生命周期策略文件
+          cat > lifecycle-policy.json << 'EOF'
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last images based on count",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": KEEP_IMAGES_PLACEHOLDER
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+          EOF
+          
+          # 替换占位符
+          sed -i "s/KEEP_IMAGES_PLACEHOLDER/${{ inputs.keep-images }}/g" lifecycle-policy.json
+          
+          echo "Lifecycle policy content:"
+          cat lifecycle-policy.json
+          
+          # 设置生命周期策略
+          if aws ecr put-lifecycle-configuration \
+            --repository-name "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" \
+            --lifecycle-policy-text file://lifecycle-policy.json; then
+            echo "Lifecycle policy set successfully"
+          else
+            echo "Warning: Failed to set lifecycle policy, but continuing..."
+            echo "You may need to set it manually in the AWS console"
+          fi
+          
+          # 清理临时文件
+          rm -f lifecycle-policy.json
           
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
