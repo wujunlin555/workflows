@@ -26,13 +26,6 @@ on:
       aws-secret-access-key:
         description: "AWS Secret Access Key"
         required: true
-    outputs:
-      image-uri:
-        description: "Built image URI"
-        value: ${{ jobs.build-push.outputs.image-uri }}
-      image-tag:
-        description: "Built image tag"
-        value: ${{ jobs.build-push.outputs.image-tag }}
 
 jobs:
   build-push:
@@ -42,10 +35,6 @@ jobs:
     env:
       AWS_REGION: ${{ inputs.aws-region }}
       ECR_REGISTRY: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com
-    
-    outputs:
-      image-uri: ${{ steps.vars.outputs.image-uri }}
-      image-tag: ${{ steps.vars.outputs.image-tag }}
       
     steps:
       - name: Checkout
@@ -57,16 +46,14 @@ jobs:
           TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
           BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
           REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           
-          IMAGE_TAG="${BRANCH_NAME}-${TIMESTAMP}"
+          IMAGE_TAG="${BRANCH_NAME}-${SHORT_SHA}-${TIMESTAMP}"
           IMAGE_URI="${ECR_REGISTRY}/${REPO_NAME}:${IMAGE_TAG}"
           
           echo "ECR_REPOSITORY=$REPO_NAME" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          
-          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           
           echo "Image: $IMAGE_URI"
           
