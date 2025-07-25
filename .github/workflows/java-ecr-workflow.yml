@@ -78,28 +78,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
           aws-region: ${{ inputs.aws-region }}
           
+      - name: Create Lifecycle Policy File
+        run: |
+          cat > lifecycle-policy.json << EOF
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${{ inputs.keep-images }} images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${{ inputs.keep-images }}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+          EOF
+          
       - name: Create ECR Repository with Lifecycle Policy
         uses: int128/create-ecr-repository-action@v1
         with:
           repository: ${{ env.ECR_REPOSITORY }}
           public: false
-          lifecycle-policy: |
-            {
-              "rules": [
-                {
-                  "rulePriority": 1,
-                  "description": "Keep last ${{ inputs.keep-images }} images",
-                  "selection": {
-                    "tagStatus": "any",
-                    "countType": "imageCountMoreThan",
-                    "countNumber": ${{ inputs.keep-images }}
-                  },
-                  "action": {
-                    "type": "expire"
-                  }
-                }
-              ]
-            }
+          lifecycle-policy: lifecycle-policy.json
           
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
