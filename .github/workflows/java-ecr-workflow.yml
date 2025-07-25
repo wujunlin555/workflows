@@ -129,15 +129,32 @@ jobs:
           echo "Lifecycle policy content:"
           cat lifecycle-policy.json
           
-          # 设置生命周期策略
-          if aws ecr put-lifecycle-configuration \
+          # 检查 AWS CLI 版本
+          echo "AWS CLI version:"
+          aws --version
+          
+          # 设置生命周期策略 - 修复命令格式
+          echo "Attempting to set lifecycle policy..."
+          if aws ecr put-lifecycle-policy \
             --repository-name "$ECR_REPOSITORY" \
             --region "$AWS_REGION" \
             --lifecycle-policy-text file://lifecycle-policy.json; then
             echo "Lifecycle policy set successfully"
           else
-            echo "Warning: Failed to set lifecycle policy, but continuing..."
-            echo "You may need to set it manually in the AWS console"
+            echo "First attempt failed, trying alternative method..."
+            # 尝试直接传递 JSON 内容
+            POLICY_TEXT=$(cat lifecycle-policy.json)
+            if aws ecr put-lifecycle-policy \
+              --repository-name "$ECR_REPOSITORY" \
+              --region "$AWS_REGION" \
+              --lifecycle-policy-text "$POLICY_TEXT"; then
+              echo "Lifecycle policy set successfully with alternative method"
+            else
+              echo "Warning: Failed to set lifecycle policy with both methods"
+              echo "You may need to set it manually in the AWS console"
+              echo "Policy JSON for manual setup:"
+              cat lifecycle-policy.json
+            fi
           fi
           
           # 清理临时文件
