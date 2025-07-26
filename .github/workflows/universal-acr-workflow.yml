@@ -1,0 +1,82 @@
+# 阿里云 ACR 构建 Workflow
+name: Build Docker Image and Push to ACR
+
+on:
+  workflow_call:
+    inputs:
+      acr-region:
+        description: "ACR region"
+        required: false
+        default: "cn-hangzhou"
+        type: string
+      acr-registry:
+        description: "ACR Registry URL"
+        required: false
+        default: "registry.cn-hangzhou.aliyuncs.com"
+        type: string
+      acr-namespace:
+        description: "ACR Namespace"
+        required: false
+        default: "your-namespace"
+        type: string
+      dockerfile-path:
+        description: "Path to Dockerfile"
+        required: false
+        default: "Dockerfile"
+        type: string
+    secrets:
+      acr-username:
+        description: "ACR Username"
+        required: true
+      acr-password:
+        description: "ACR Password"
+        required: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Set Variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
+          BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g' | tr '[:upper:]' '[:lower:]')
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          
+          IMAGE_TAG="${BRANCH_NAME}-${TIMESTAMP}"
+          IMAGE_URI="${{ inputs.acr-registry }}/${{ inputs.acr-namespace }}/${REPO_NAME}:${IMAGE_TAG}"
+          
+          echo "ACR_REGISTRY=${{ inputs.acr-registry }}" >> $GITHUB_ENV
+          echo "ACR_NAMESPACE=${{ inputs.acr-namespace }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${REPO_NAME}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          
+          echo "ACR Registry: ${{ inputs.acr-registry }}"
+          echo "Namespace: ${{ inputs.acr-namespace }}"
+          echo "Image: ${IMAGE_URI}"
+          
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.acr-registry }}
+          username: ${{ secrets.acr-username }}
+          password: ${{ secrets.acr-password }}
+          
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile-path }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE_URI }}
+        
+      - name: Build Complete
+        run: |
+          echo "✅ Image pushed to ACR: ${{ env.IMAGE_URI }}"
