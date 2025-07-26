@@ -7,17 +7,17 @@ on:
       acr-region:
         description: "ACR region"
         required: false
-        default: "cn-hangzhou"
+        default: "cn-beijing"
         type: string
       acr-registry:
         description: "ACR Registry URL"
         required: false
-        default: "registry.cn-hangzhou.aliyuncs.com"
+        default: "registry.cn-beijing.aliyuncs.com"
         type: string
       acr-namespace:
         description: "ACR Namespace"
         required: false
-        default: "your-namespace"
+        default: "wujunlin"
         type: string
       dockerfile-path:
         description: "Path to Dockerfile"
