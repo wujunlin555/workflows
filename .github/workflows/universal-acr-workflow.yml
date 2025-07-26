@@ -22,7 +22,7 @@ on:
       dockerfile_path:
         description: "Path to Dockerfile"
         required: false
-        default: "Dockerfile"
+        default: ".github/workflows/Dockerfile"
         type: string
     secrets:
       acr_username:
